@@ -27,6 +27,7 @@
   .me{display:flex; flex-direction:column; gap:4px}
   .me label{font-size:12px; color:var(--muted); font-weight:500}
   .me input{padding:8px 10px; border:1px solid var(--line); border-radius:8px; font:inherit; min-width:170px; background:var(--card)}
+  .me input.need{border-color:#c0392b; box-shadow:0 0 0 3px rgba(192,57,43,.12)}
   .status{font-size:13px; color:var(--muted); margin:14px 0 18px; display:flex; align-items:center; gap:7px}
   .dot{width:8px; height:8px; border-radius:50%; background:#bbb}
   .dot.live{background:#2f9e6f}
@@ -168,8 +169,19 @@
   try { nameInput.value = localStorage.getItem("getraenke_name") || ""; } catch(e){}
   nameInput.addEventListener("input", () => {
     try { localStorage.setItem("getraenke_name", nameInput.value.trim()); } catch(e){}
+    if (nameInput.value.trim()) nameInput.classList.remove("need");
   });
   const wer = () => nameInput.value.trim() || "unbekannt";
+
+  // Verlangt, dass ein Name eingetragen ist, bevor etwas geändert wird
+  function requireName(){
+    if (nameInput.value.trim()){ nameInput.classList.remove("need"); return true; }
+    nameInput.classList.add("need");
+    nameInput.scrollIntoView({ behavior:"smooth", block:"center" });
+    nameInput.focus();
+    alert("Bitte trage zuerst oben deinen Namen ein, damit jede Änderung zugeordnet werden kann.");
+    return false;
+  }
 
   // --- Zustand ---
   let items = [];
@@ -260,6 +272,7 @@
 
   // --- Neues Getränk hinzufügen ---
   document.getElementById("add").addEventListener("click", async () => {
+    if (!requireName()) return;
     const name = document.getElementById("f-name").value.trim();
     if (!name){ document.getElementById("f-name").focus(); return; }
     const menge = Number(document.getElementById("f-menge").value) || 0;
@@ -287,6 +300,9 @@
     if (!btn) return;
     const action = btn.dataset.action;
     const id = btn.dataset.id;
+
+    // Bei schreibenden Aktionen zuerst den Namen verlangen
+    if (["inc","dec","flag","save","del"].includes(action) && !requireName()) return;
 
     try {
       if (action === "inc" || action === "dec"){
