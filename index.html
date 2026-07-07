@@ -33,7 +33,7 @@
   .dot.err{background:#c0392b}
 
   .addcard{background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:16px; margin-bottom:22px}
-  .addgrid{display:grid; grid-template-columns:1.6fr .8fr 1fr 1.4fr auto; gap:10px; align-items:end}
+  .addgrid{display:grid; grid-template-columns:1.5fr .7fr .9fr .9fr 1.2fr auto; gap:10px; align-items:end}
   .field{display:flex; flex-direction:column; gap:5px}
   .field label{font-size:12px; color:var(--muted); font-weight:500}
   .field input,.field select{padding:10px; border:1px solid var(--line); border-radius:8px; font:inherit; background:var(--card); width:100%}
@@ -55,6 +55,14 @@
   .qty .step:hover{border-color:#bfc4bf}
   .qty .val{min-width:74px; text-align:center; font-weight:600; font-variant-numeric:tabular-nums}
   .qty .unit{color:var(--muted); font-weight:400; font-size:14px}
+  .wert{flex:0 0 auto; text-align:right; min-width:110px}
+  .wert .label{font-size:11px; color:var(--muted)}
+  .wert .amount{font-weight:600; font-size:16px; font-variant-numeric:tabular-nums}
+  .wert .single{font-size:12px; color:var(--muted)}
+
+  .summary{display:flex; justify-content:space-between; align-items:center; background:var(--primary); color:#fff; border-radius:var(--radius); padding:14px 18px; margin-bottom:18px}
+  .summary .lbl{font-size:14px; opacity:.85}
+  .summary .total{font-family:"Space Grotesk",sans-serif; font-weight:600; font-size:24px; font-variant-numeric:tabular-nums}
 
   .actions{display:flex; gap:6px; flex-wrap:wrap}
   .chip{background:var(--card); border:1px solid var(--line); color:var(--ink); padding:7px 12px; font-size:13px; font-weight:500}
@@ -62,7 +70,7 @@
   .chip.on{background:var(--warn); border-color:var(--warn); color:#fff}
   .chip.danger:hover{border-color:#d98b8b; color:#b23b3b}
 
-  .edit{display:grid; grid-template-columns:1.6fr .7fr 1fr 1.6fr; gap:8px; flex:1 1 100%}
+  .edit{display:grid; grid-template-columns:1.4fr .6fr .9fr .7fr 1.4fr; gap:8px; flex:1 1 100%}
   .edit input,.edit select{padding:8px; border:1px solid var(--line); border-radius:8px; font:inherit; width:100%}
   .edit-actions{display:flex; gap:6px; flex:1 1 100%; margin-top:4px}
 
@@ -114,11 +122,20 @@
         </select>
       </div>
       <div class="field">
+        <label for="f-preis">Preis pro Einheit (€)</label>
+        <input id="f-preis" type="number" min="0" step="0.01" value="0">
+      </div>
+      <div class="field">
         <label for="f-notiz">Notiz (optional)</label>
         <input id="f-notiz" type="text" placeholder="z. B. Lager hinten">
       </div>
       <button id="add" class="btn-primary">Hinzufügen</button>
     </div>
+  </div>
+
+  <div id="summary" class="summary" style="display:none">
+    <span class="lbl">Gesamter Warenwert</span>
+    <span id="total" class="total">0,00 €</span>
   </div>
 
   <div id="list" class="list"></div>
@@ -177,9 +194,19 @@
     if (!ts || !ts.toDate) return "";
     return ts.toDate().toLocaleString("de-DE", { day:"2-digit", month:"2-digit", hour:"2-digit", minute:"2-digit" });
   };
+  const eur = (n) => (Number(n)||0).toLocaleString("de-DE", { style:"currency", currency:"EUR" });
   const esc = (s) => (s ?? "").toString().replace(/[&<>"]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c]));
 
   function render(){
+    const total = items.reduce((s,it) => s + (Number(it.preis)||0) * (Number(it.menge)||0), 0);
+    const summaryEl = document.getElementById("summary");
+    if (items.length > 0){
+      summaryEl.style.display = "flex";
+      document.getElementById("total").textContent = eur(total);
+    } else {
+      summaryEl.style.display = "none";
+    }
+
     if (items.length === 0){
       listEl.innerHTML = '<div class="empty"><strong>Noch keine Getränke</strong>Trage oben das erste Getränk ein.</div>';
       return;
@@ -197,6 +224,7 @@
             <input data-e="name" type="text" value="${esc(it.name)}" placeholder="Getränk">
             <input data-e="menge" type="number" min="0" value="${Number(it.menge)||0}">
             <select data-e="einheit">${["Kisten","Flaschen","Dosen","Fässer","Packungen","Stück"].map(u=>`<option ${u===it.einheit?"selected":""}>${u}</option>`).join("")}</select>
+            <input data-e="preis" type="number" min="0" step="0.01" value="${Number(it.preis)||0}" placeholder="Preis €">
             <input data-e="notiz" type="text" value="${esc(it.notiz)}" placeholder="Notiz">
           </div>
           <div class="edit-actions">
@@ -216,6 +244,11 @@
           <span class="val">${Number(it.menge)||0} <span class="unit">${esc(it.einheit)}</span></span>
           <button class="step" data-action="inc" data-id="${it.id}" aria-label="mehr">+</button>
         </div>
+        <div class="wert">
+          <div class="label">Warenwert</div>
+          <div class="amount">${eur((Number(it.preis)||0) * (Number(it.menge)||0))}</div>
+          <div class="single">${eur(it.preis)} / ${esc(it.einheit)||"Einheit"}</div>
+        </div>
         <div class="actions">
           <button class="chip ${it.nachbestellen ? "on":""}" data-action="flag" data-id="${it.id}">${it.nachbestellen ? "erledigt":"nachbestellen"}</button>
           <button class="chip" data-action="edit" data-id="${it.id}">Bearbeiten</button>
@@ -231,15 +264,17 @@
     if (!name){ document.getElementById("f-name").focus(); return; }
     const menge = Number(document.getElementById("f-menge").value) || 0;
     const einheit = document.getElementById("f-einheit").value;
+    const preis = Number(document.getElementById("f-preis").value) || 0;
     const notiz = document.getElementById("f-notiz").value.trim();
     try {
       await addDoc(colRef, {
-        name, menge, einheit, notiz,
+        name, menge, einheit, preis, notiz,
         nachbestellen: false,
         updatedBy: wer(), updatedAt: serverTimestamp()
       });
       document.getElementById("f-name").value = "";
       document.getElementById("f-menge").value = "0";
+      document.getElementById("f-preis").value = "0";
       document.getElementById("f-notiz").value = "";
       document.getElementById("f-name").focus();
     } catch(e){ alert("Speichern fehlgeschlagen: " + e.message); }
@@ -273,6 +308,7 @@
           name: val("name").trim(),
           menge: Number(val("menge"))||0,
           einheit: val("einheit"),
+          preis: Number(val("preis"))||0,
           notiz: val("notiz").trim(),
           updatedBy: wer(), updatedAt: serverTimestamp()
         });
