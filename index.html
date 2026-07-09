@@ -130,9 +130,33 @@
   .chip{background:var(--card); border:1px solid var(--line); color:var(--ink); padding:7px 12px; font-size:13px; font-weight:500}
   .chip:hover{border-color:var(--line-strong)}
   .chip.on{background:var(--warn); border-color:var(--warn); color:#fff}
-  .chip.filter{background:transparent}
-  .chip.filter.active{background:var(--primary); border-color:var(--primary); color:var(--on-primary)}
+  .chip.filter,.chip.period-btn{background:transparent}
+  .chip.filter.active,.chip.period-btn.active{background:var(--primary); border-color:var(--primary); color:var(--on-primary)}
   .chip.danger:hover{border-color:var(--danger); color:var(--danger)}
+  #statsToggle.on{background:var(--primary); border-color:var(--primary); color:var(--on-primary)}
+
+  /* Verbrauchsstatistik */
+  .statspanel{background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:16px 18px; margin-bottom:20px; box-shadow:var(--shadow-sm)}
+  .statspanel h3{margin:0 0 4px; font-size:16px; font-family:"Space Grotesk",sans-serif}
+  .statspanel .hint{color:var(--muted); font-size:12px; margin:0 0 14px}
+  .period{display:flex; gap:6px; margin-bottom:14px; flex-wrap:wrap}
+  .person{border:1px solid var(--line); border-radius:var(--radius-sm); margin-bottom:8px; overflow:hidden; background:var(--card-2)}
+  .person-head{display:flex; align-items:center; gap:12px; padding:12px 14px; cursor:pointer; user-select:none}
+  .person-head:hover{background:var(--primary-soft)}
+  .rank{width:26px; height:26px; border-radius:50%; background:var(--primary); color:var(--on-primary); font-size:13px; font-weight:600; display:flex; align-items:center; justify-content:center; flex:0 0 auto}
+  .rank.r1{background:linear-gradient(135deg,#f4c430,#e0a100); color:#3a2c00}
+  .rank.r2{background:linear-gradient(135deg,#d3d8dc,#a9b0b5); color:#2a2f33}
+  .rank.r3{background:linear-gradient(135deg,#e0a06a,#c67f43); color:#3a2110}
+  .person-name{font-weight:600; flex:1 1 auto; min-width:0; word-break:break-word}
+  .person-tot{text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap}
+  .person-tot .q{font-weight:600}
+  .person-tot .e{font-size:12px; color:var(--muted)}
+  .person-arrow{color:var(--muted); transition:transform .15s; flex:0 0 auto; font-size:13px}
+  .person.open .person-arrow{transform:rotate(90deg)}
+  .person-body{padding:0 14px 10px 52px; display:none}
+  .person.open .person-body{display:block}
+  .drink-row{display:flex; justify-content:space-between; gap:10px; padding:6px 0; border-top:1px solid var(--line); font-size:14px}
+  .drink-row .dq{color:var(--muted); font-variant-numeric:tabular-nums; white-space:nowrap}
 
   .edit{display:grid; grid-template-columns:1.4fr .6fr .9fr .7fr 1.4fr; gap:8px; flex:1 1 100%}
   .edit input,.edit select{padding:9px; border:1px solid var(--line); border-radius:var(--radius-sm); font:inherit; width:100%; background:var(--card); color:var(--ink)}
@@ -299,7 +323,19 @@
     <div class="filters">
       <button class="chip filter active" data-filter="all" type="button">Alle</button>
       <button class="chip filter" data-filter="reorder" type="button">Nur nachbestellen</button>
+      <button id="statsToggle" class="chip" type="button">📊 Verbrauch</button>
     </div>
+  </div>
+
+  <div id="statsPanel" class="statspanel hidden">
+    <h3>Verbrauch pro Person</h3>
+    <p class="hint">Zählt jede Bestandsverringerung der jeweils eingeloggten Person. Die Auswertung beginnt ab Einführung dieser Funktion.</p>
+    <div class="period">
+      <button class="chip period-btn active" data-period="all" type="button">Gesamt</button>
+      <button class="chip period-btn" data-period="month" type="button">Dieser Monat</button>
+      <button class="chip period-btn" data-period="week" type="button">Diese Woche</button>
+    </div>
+    <div id="statsContent"></div>
   </div>
 
   <div id="list" class="list"></div>
@@ -333,6 +369,7 @@
   const db = getFirestore(app);
   const auth = getAuth(app);
   const colRef = collection(db, "getraenke");
+  const eventsRef = collection(db, "events");
 
   // --- Dark Mode (Auswahl wird gespeichert, sonst System-Einstellung) ---
   const themeToggle = document.getElementById("themeToggle");
@@ -546,11 +583,17 @@
   let editingId = null;
   let searchTerm = "";
   let activeFilter = "all";
+  let events = [];
+  let statsPeriod = "all";
+  const expandedPersons = new Set();
   const listEl = document.getElementById("list");
   const dot = document.getElementById("dot");
   const statusText = document.getElementById("statustext");
   const toolbarEl = document.getElementById("toolbar");
   const searchInput = document.getElementById("searchInput");
+  const statsToggle = document.getElementById("statsToggle");
+  const statsPanel = document.getElementById("statsPanel");
+  const statsContent = document.getElementById("statsContent");
 
   searchInput.addEventListener("input", () => { searchTerm = searchInput.value.trim().toLowerCase(); render(); });
   document.querySelectorAll(".chip.filter").forEach(btn => {
@@ -560,6 +603,43 @@
       render();
     });
   });
+
+  // --- Verbrauchsstatistik: Panel öffnen/schließen, Zeitraum wählen, aufklappen ---
+  statsToggle.addEventListener("click", () => {
+    const willShow = statsPanel.classList.contains("hidden");
+    statsPanel.classList.toggle("hidden", !willShow);
+    statsToggle.classList.toggle("on", willShow);
+    if (willShow) renderStats();
+  });
+  document.querySelectorAll(".period-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      statsPeriod = btn.dataset.period;
+      document.querySelectorAll(".period-btn").forEach(b => b.classList.toggle("active", b === btn));
+      renderStats();
+    });
+  });
+  statsContent.addEventListener("click", (e) => {
+    const head = e.target.closest(".person-head");
+    if (!head) return;
+    const user = head.dataset.user;
+    if (expandedPersons.has(user)) expandedPersons.delete(user); else expandedPersons.add(user);
+    renderStats();
+  });
+
+  // Verbrauch protokollieren (non-blocking: Fehler stoppen die Hauptaktion nicht)
+  async function logConsumption(name, einheit, preis, qty){
+    if (!(qty > 0)) return;
+    try {
+      await addDoc(eventsRef, {
+        user: wer(),
+        item: name || "(ohne Name)",
+        einheit: einheit || "",
+        qty,
+        preis: Number(preis) || 0,
+        ts: serverTimestamp()
+      });
+    } catch (e) { console.error("Verbrauch konnte nicht protokolliert werden:", e); }
+  }
 
   // --- Live-Verbindung zur Datenbank ---
   let unsubscribeItems = null;
@@ -577,16 +657,89 @@
     });
   };
 
+  let unsubscribeEvents = null;
+  const attachEventsListener = () => {
+    if (unsubscribeEvents) unsubscribeEvents();
+    unsubscribeEvents = onSnapshot(eventsRef, (snap) => {
+      events = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      renderStats();
+    }, (err) => { console.error("Verbrauchs-Protokoll konnte nicht geladen werden:", err); });
+  };
+
   onAuthStateChanged(auth, (user) => {
     if (!user) {
       items = [];
+      events = [];
+      if (unsubscribeEvents) { unsubscribeEvents(); unsubscribeEvents = null; }
       render();
+      renderStats();
       dot.className = "dot err";
       statusText.textContent = "Bitte melde dich an, um den Bestand zu sehen.";
       return;
     }
     attachItemsListener();
+    attachEventsListener();
   });
+
+  // --- Statistik berechnen & anzeigen ---
+  function periodStart(){
+    const now = new Date();
+    if (statsPeriod === "month") return new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+    if (statsPeriod === "week"){
+      const d = new Date(now);
+      const dayIdx = (d.getDay() + 6) % 7; // Montag = 0
+      d.setHours(0,0,0,0);
+      d.setDate(d.getDate() - dayIdx);
+      return d.getTime();
+    }
+    return 0; // Gesamt
+  }
+
+  function renderStats(){
+    if (!statsContent) return;
+    const start = periodStart();
+    const byUser = new Map();
+    events.forEach(ev => {
+      const t = ev.ts && ev.ts.toDate ? ev.ts.toDate().getTime() : 0;
+      if (t < start) return;
+      const u = ev.user || "unbekannt";
+      const q = Number(ev.qty) || 0;
+      const v = q * (Number(ev.preis) || 0);
+      if (!byUser.has(u)) byUser.set(u, { qty:0, value:0, drinks:new Map() });
+      const rec = byUser.get(u);
+      rec.qty += q; rec.value += v;
+      const key = `${ev.item}||${ev.einheit}`;
+      if (!rec.drinks.has(key)) rec.drinks.set(key, { item:ev.item, einheit:ev.einheit, qty:0, value:0 });
+      const dr = rec.drinks.get(key);
+      dr.qty += q; dr.value += v;
+    });
+
+    const persons = [...byUser.entries()]
+      .map(([user, rec]) => ({ user, ...rec }))
+      .sort((a,b) => b.value - a.value || b.qty - a.qty);
+
+    if (persons.length === 0){
+      statsContent.innerHTML = '<div class="empty"><strong>Noch keine Daten</strong>Sobald jemand etwas entnimmt, erscheint hier die Auswertung.</div>';
+      return;
+    }
+
+    statsContent.innerHTML = persons.map((p, i) => {
+      const rankClass = i < 3 ? `r${i+1}` : "";
+      const drinks = [...p.drinks.values()].sort((a,b) => b.qty - a.qty);
+      const open = expandedPersons.has(p.user);
+      return `<div class="person ${open ? "open" : ""}">
+        <div class="person-head" data-user="${esc(p.user)}">
+          <span class="rank ${rankClass}">${i+1}</span>
+          <span class="person-name">${esc(p.user)}</span>
+          <span class="person-tot"><span class="q">${p.qty.toLocaleString("de-DE")} Einh.</span> · <span class="e">${eur(p.value)}</span></span>
+          <span class="person-arrow">▸</span>
+        </div>
+        <div class="person-body">
+          ${drinks.map(d => `<div class="drink-row"><span>${esc(d.item) || "(ohne Name)"}</span><span class="dq">${d.qty.toLocaleString("de-DE")} ${esc(d.einheit)} · ${eur(d.value)}</span></div>`).join("")}
+        </div>
+      </div>`;
+    }).join("");
+  }
 
   const fmtDate = (ts) => {
     if (!ts || !ts.toDate) return "";
@@ -721,6 +874,7 @@
         const next = (Number(cur?.menge)||0) + (action === "inc" ? 1 : -1);
         if (next < 0) return;
         await updateDoc(doc(db,"getraenke",id), { menge: increment(action === "inc" ? 1 : -1), updatedBy: wer(), updatedAt: serverTimestamp() });
+        if (action === "dec") logConsumption(cur?.name, cur?.einheit, cur?.preis, 1);
       }
       else if (action === "flag"){
         const cur = items.find(x => x.id === id);
@@ -731,15 +885,21 @@
       else if (action === "save"){
         const row = btn.closest(".item");
         const val = sel => row.querySelector(`[data-e="${sel}"]`).value;
+        const cur = items.find(x => x.id === id);
+        const newMenge = Number(val("menge"))||0;
+        const consumed = (Number(cur?.menge)||0) - newMenge; // positiv = Reduktion
+        const newEinheit = val("einheit");
+        const newPreis = Number(val("preis"))||0;
         await updateDoc(doc(db,"getraenke",id), {
           name: val("name").trim(),
-          menge: Number(val("menge"))||0,
-          einheit: val("einheit"),
-          preis: Number(val("preis"))||0,
+          menge: newMenge,
+          einheit: newEinheit,
+          preis: newPreis,
           notiz: val("notiz").trim(),
           updatedBy: wer(), updatedAt: serverTimestamp()
         });
         editingId = null;
+        if (consumed > 0) logConsumption(val("name").trim(), newEinheit, newPreis, consumed);
       }
       else if (action === "del"){
         const cur = items.find(x => x.id === id);
