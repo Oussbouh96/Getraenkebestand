@@ -102,6 +102,10 @@
   <h2>Zugang geschützt</h2>
   <p>Bitte melde dich mit einem freigeschalteten Konto an, um den Getränkebestand zu sehen.</p>
   <div class="field">
+    <label for="authName">Dein Name <span style="color:var(--muted)">(nur beim Konto anlegen)</span></label>
+    <input id="authName" type="text" placeholder="z. B. Oussama">
+  </div>
+  <div class="field">
     <label for="authEmail">E-Mail</label>
     <input id="authEmail" type="email" placeholder="du@example.com">
   </div>
@@ -123,8 +127,8 @@
       <p class="sub">Gemeinsame Bestandsliste – Änderungen erscheinen bei allen live.</p>
     </div>
     <div class="me">
-      <label for="myname">Dein Name (für „zuletzt geändert")</label>
-      <input id="myname" type="text" placeholder="z. B. Oussama">
+      <label for="myname">Angemeldet als (wird bei „zuletzt geändert" verwendet)</label>
+      <input id="myname" type="text" placeholder="Name" title="Dieser Name ist mit deinem Konto verknüpft">
       <button id="signOutBtn" class="chip hidden" type="button">Abmelden</button>
     </div>
   </header>
@@ -185,7 +189,7 @@
 
   <div id="list" class="list"></div>
 
-  <p style="text-align:center; color:var(--muted); font-size:12px; margin-top:28px">Version 2 · Name erforderlich vor jeder Änderung</p>
+  <p style="text-align:center; color:var(--muted); font-size:12px; margin-top:28px">Version 3 · Name automatisch aus dem Konto</p>
 </div>
 
 <script type="module">
@@ -196,7 +200,7 @@
   } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
   import {
     getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword,
-    signOut, onAuthStateChanged
+    signOut, onAuthStateChanged, updateProfile
   } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
 
   // --- Deine Firebase-Konfiguration ---
@@ -217,6 +221,7 @@
 
   const authShell = document.getElementById("authShell");
   const appContent = document.getElementById("appContent");
+  const authNameInput = document.getElementById("authName");
   const authEmailInput = document.getElementById("authEmail");
   const authPasswordInput = document.getElementById("authPassword");
   const authStatus = document.getElementById("authStatus");
@@ -230,7 +235,6 @@
   const removeAllowedBtn = document.getElementById("removeAllowedBtn");
 
   const HARDCODED_ADMIN_EMAIL = "osama.bouhrim@gmail.com";
-  const HARDCODED_ADMIN_PASSWORD = "Admin123456!";
   const settingsDocRef = doc(db, "settings", "access");
   let allowedEmails = [];
   let currentUser = null;
@@ -257,6 +261,8 @@
       authShell.classList.add("hidden");
       appContent.classList.remove("hidden");
       signOutBtn.classList.remove("hidden");
+      const nameInput = document.getElementById("myname");
+      if (nameInput) nameInput.value = user.displayName || (user.email ? user.email.split("@")[0] : "");
       renderAdminPanel();
       authStatus.textContent = message || `Eingeloggt als ${user.email}`;
     } else {
@@ -276,34 +282,42 @@
   async function handleAuth(action){
     const email = authEmailInput.value.trim();
     const password = authPasswordInput.value;
+    const name = authNameInput.value.trim();
     if (!email || !password){ authStatus.textContent = "Bitte E-Mail und Passwort eingeben."; return; }
 
-    const isAdminLogin = normalizeEmail(email) === HARDCODED_ADMIN_EMAIL && password === HARDCODED_ADMIN_PASSWORD;
     try {
-      if (action === "signIn"){
-        if (isAdminLogin){
-          try {
-            await signInWithEmailAndPassword(auth, email, password);
-          } catch (err) {
-            if (err.code === "auth/user-not-found") {
-              await createUserWithEmailAndPassword(auth, email, password);
-            } else {
-              throw err;
-            }
-          }
-        } else {
-          await signInWithEmailAndPassword(auth, email, password);
+      if (action === "signUp"){
+        if (!name){ authStatus.textContent = "Bitte gib deinen Namen ein, damit Änderungen zugeordnet werden."; return; }
+        let cred;
+        try {
+          cred = await createUserWithEmailAndPassword(auth, email, password);
+        } catch (err) {
+          if (err.code !== "auth/email-already-in-use") throw err;
+          // Konto existiert schon -> einloggen und Namen aktualisieren
+          cred = await signInWithEmailAndPassword(auth, email, password);
         }
+        if (cred?.user) await updateProfile(cred.user, { displayName: name });
       } else {
-        if (isAdminLogin){
-          try {
-            await createUserWithEmailAndPassword(auth, email, password);
-          } catch (err) {
-            if (err.code !== "auth/email-already-in-use") throw err;
-            await signInWithEmailAndPassword(auth, email, password);
+        // Anmelden
+        try {
+          await signInWithEmailAndPassword(auth, email, password);
+        } catch (err) {
+          // Konto evtl. noch nicht vorhanden – nur anlegen, wenn ein Name eingetragen ist
+          if (err.code === "auth/invalid-credential" || err.code === "auth/user-not-found"){
+            if (!name){
+              authStatus.textContent = "Anmeldung fehlgeschlagen. Falls du noch kein Konto hast: Namen eingeben und auf „Konto anlegen\" klicken.";
+              return;
+            }
+            try {
+              const cred = await createUserWithEmailAndPassword(auth, email, password);
+              await updateProfile(cred.user, { displayName: name });
+            } catch (err2){
+              if (err2.code === "auth/email-already-in-use") authStatus.textContent = "Falsches Passwort für dieses Konto.";
+              else throw err2;
+            }
+          } else {
+            throw err;
           }
-        } else {
-          await createUserWithEmailAndPassword(auth, email, password);
         }
       }
     } catch (err){ authStatus.textContent = err.message; }
@@ -365,22 +379,35 @@
     authStatus.textContent = "Die Freigaben konnten nicht geladen werden.";
   });
 
-  // --- Name merken (nur lokal im Browser) ---
+  // --- Name kommt automatisch aus dem Konto (Firebase displayName) ---
   const nameInput = document.getElementById("myname");
-  try { nameInput.value = localStorage.getItem("getraenke_name") || ""; } catch(e){}
-  nameInput.addEventListener("input", () => {
-    try { localStorage.setItem("getraenke_name", nameInput.value.trim()); } catch(e){}
-    if (nameInput.value.trim()) nameInput.classList.remove("need");
+  // Wird der Name im Kopf geändert, dauerhaft am Konto speichern
+  nameInput.addEventListener("change", async () => {
+    const val = nameInput.value.trim();
+    if (!auth.currentUser || !val) return;
+    if (val === (auth.currentUser.displayName || "")) return;
+    try {
+      await updateProfile(auth.currentUser, { displayName: val });
+      nameInput.classList.remove("need");
+    } catch (e) { alert("Name konnte nicht gespeichert werden: " + e.message); }
   });
-  const wer = () => nameInput.value.trim() || "unbekannt";
 
-  // Verlangt, dass ein Name eingetragen ist, bevor etwas geändert wird
+  // Der zuständige Name: erst der (ggf. angepasste) Anzeigename, sonst E-Mail-Teil
+  const wer = () => {
+    const u = auth.currentUser;
+    const typed = nameInput.value.trim();
+    if (typed) return typed;
+    if (u && u.displayName) return u.displayName;
+    if (u && u.email) return u.email.split("@")[0];
+    return "unbekannt";
+  };
+
+  // Es ist immer ein Name vorhanden (aus dem Konto) – nur zur Sicherheit prüfen
   function requireName(){
-    if (nameInput.value.trim()){ nameInput.classList.remove("need"); return true; }
+    if (wer() !== "unbekannt") return true;
+    alert("Konnte den Namen nicht aus deinem Konto ermitteln. Bitte trage oben einen Namen ein.");
     nameInput.classList.add("need");
-    nameInput.scrollIntoView({ behavior:"smooth", block:"center" });
     nameInput.focus();
-    alert("Bitte trage zuerst oben deinen Namen ein, damit jede Änderung zugeordnet werden kann.");
     return false;
   }
 
