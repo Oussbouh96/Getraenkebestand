@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Getränkebestand</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#f4f6f4; --card:#ffffff; --ink:#1b211f; --muted:#6c736f;
+    --line:#e2e6e2; --primary:#175450; --primary-dark:#0f3d3a;
+    --warn:#b4601a; --warn-bg:#fbeedb; --warn-line:#f0d3a8;
+    --ok:#175450; --radius:12px;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:"Inter",system-ui,sans-serif; font-size:16px; line-height:1.5;
+    padding:24px 16px 64px;
+  }
+  .wrap{max-width:860px; margin:0 auto}
+  header{display:flex; flex-wrap:wrap; align-items:flex-end; justify-content:space-between; gap:16px; margin-bottom:8px}
+  h1{font-family:"Space Grotesk",sans-serif; font-weight:600; font-size:30px; margin:0; letter-spacing:-0.5px}
+  .sub{color:var(--muted); font-size:14px; margin:2px 0 0}
+  .me{display:flex; flex-direction:column; gap:4px}
+  .me label{font-size:12px; color:var(--muted); font-weight:500}
+  .me input{padding:8px 10px; border:1px solid var(--line); border-radius:8px; font:inherit; min-width:170px; background:var(--card)}
+  .me input.need{border-color:#c0392b; box-shadow:0 0 0 3px rgba(192,57,43,.12)}
+  .status{font-size:13px; color:var(--muted); margin:14px 0 18px; display:flex; align-items:center; gap:7px}
+  .dot{width:8px; height:8px; border-radius:50%; background:#bbb}
+  .dot.live{background:#2f9e6f}
+  .dot.err{background:#c0392b}
+
+  .addcard{background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:16px; margin-bottom:22px}
+  .addgrid{display:grid; grid-template-columns:1.5fr .7fr .9fr .9fr 1.2fr auto; gap:10px; align-items:end}
+  .field{display:flex; flex-direction:column; gap:5px}
+  .field label{font-size:12px; color:var(--muted); font-weight:500}
+  .field input,.field select{padding:10px; border:1px solid var(--line); border-radius:8px; font:inherit; background:var(--card); width:100%}
+  button{font:inherit; cursor:pointer; border-radius:8px; border:1px solid transparent}
+  .btn-primary{background:var(--primary); color:#fff; padding:10px 18px; font-weight:600; height:42px; white-space:nowrap}
+  .btn-primary:hover{background:var(--primary-dark)}
+
+  .list{display:flex; flex-direction:column; gap:10px}
+  .item{background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:14px 16px; display:flex; align-items:center; gap:14px; flex-wrap:wrap}
+  .item.reorder{border-color:var(--warn-line); background:var(--warn-bg)}
+  .item .main{flex:1 1 210px; min-width:0}
+  .item .name{font-weight:600; font-size:17px}
+  .item .note{color:var(--muted); font-size:13px; margin-top:2px; word-break:break-word}
+  .item .meta{color:var(--muted); font-size:12px; margin-top:3px}
+  .badge{display:inline-block; background:var(--warn); color:#fff; font-size:11px; font-weight:600; padding:2px 8px; border-radius:20px; margin-left:8px; vertical-align:middle}
+
+  .qty{display:flex; align-items:center; gap:8px}
+  .qty .step{width:34px; height:34px; border:1px solid var(--line); background:var(--card); font-size:20px; line-height:1; color:var(--ink); display:flex; align-items:center; justify-content:center}
+  .qty .step:hover{border-color:#bfc4bf}
+  .qty .val{min-width:74px; text-align:center; font-weight:600; font-variant-numeric:tabular-nums}
+  .qty .unit{color:var(--muted); font-weight:400; font-size:14px}
+  .wert{flex:0 0 auto; text-align:right; min-width:110px}
+  .wert .label{font-size:11px; color:var(--muted)}
+  .wert .amount{font-weight:600; font-size:16px; font-variant-numeric:tabular-nums}
+  .wert .single{font-size:12px; color:var(--muted)}
+
+  .summary{display:flex; justify-content:space-between; align-items:center; background:var(--primary); color:#fff; border-radius:var(--radius); padding:14px 18px; margin-bottom:18px}
+  .summary .lbl{font-size:14px; opacity:.85}
+  .summary .total{font-family:"Space Grotesk",sans-serif; font-weight:600; font-size:24px; font-variant-numeric:tabular-nums}
+
+  .actions{display:flex; gap:6px; flex-wrap:wrap}
+  .chip{background:var(--card); border:1px solid var(--line); color:var(--ink); padding:7px 12px; font-size:13px; font-weight:500}
+  .chip:hover{border-color:#bfc4bf}
+  .chip.on{background:var(--warn); border-color:var(--warn); color:#fff}
+  .chip.danger:hover{border-color:#d98b8b; color:#b23b3b}
+
+  .edit{display:grid; grid-template-columns:1.4fr .6fr .9fr .7fr 1.4fr; gap:8px; flex:1 1 100%}
+  .edit input,.edit select{padding:8px; border:1px solid var(--line); border-radius:8px; font:inherit; width:100%}
+  .edit-actions{display:flex; gap:6px; flex:1 1 100%; margin-top:4px}
+
+  .empty{text-align:center; color:var(--muted); padding:48px 16px; border:1px dashed var(--line); border-radius:var(--radius)}
+  .empty strong{display:block; color:var(--ink); font-weight:600; margin-bottom:4px}
+
+  .hidden{display:none !important}
+  .auth-shell{max-width:420px; margin:32px auto 0; background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:24px; box-shadow:0 10px 30px rgba(0,0,0,.04)}
+  .auth-shell h2{margin:0 0 8px; font-size:24px}
+  .auth-shell p{margin:0 0 14px; color:var(--muted)}
+  .auth-actions{display:flex; gap:8px; flex-wrap:wrap; margin-top:12px}
+  .auth-status{font-size:13px; color:var(--muted); margin-top:12px}
+  .admin-card{margin:18px 0 6px; background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:14px}
+  .admin-card h3{margin:0 0 6px; font-size:16px}
+  .admin-list{padding-left:18px; margin:8px 0 0; color:var(--muted)}
+  .admin-row{display:flex; gap:8px; flex-wrap:wrap; align-items:end; margin-top:8px}
+
+  @media(max-width:720px){
+    .addgrid{grid-template-columns:1fr 1fr}
+    .addgrid .field.wide,.addgrid .btn-primary{grid-column:1 / -1}
+    .edit{grid-template-columns:1fr 1fr}
+    .item{gap:10px}
+  }
+</style>
+</head>
+<body>
+<div id="authShell" class="auth-shell">
+  <h2>Zugang geschützt</h2>
+  <p>Bitte melde dich mit einem freigeschalteten Konto an, um den Getränkebestand zu sehen.</p>
+  <div class="field">
+    <label for="authEmail">E-Mail</label>
+    <input id="authEmail" type="email" placeholder="du@example.com">
+  </div>
+  <div class="field">
+    <label for="authPassword">Passwort</label>
+    <input id="authPassword" type="password" placeholder="Mindestens 6 Zeichen">
+  </div>
+  <div class="auth-actions">
+    <button id="signInBtn" class="btn-primary" type="button">Anmelden</button>
+    <button id="signUpBtn" class="chip" type="button">Konto anlegen</button>
+  </div>
+  <div id="authStatus" class="auth-status">Bitte logge dich ein.</div>
+</div>
+
+<div id="appContent" class="wrap hidden">
+  <header>
+    <div>
+      <h1>Getränkebestand</h1>
+      <p class="sub">Gemeinsame Bestandsliste – Änderungen erscheinen bei allen live.</p>
+    </div>
+    <div class="me">
+      <label for="myname">Dein Name (für „zuletzt geändert")</label>
+      <input id="myname" type="text" placeholder="z. B. Oussama">
+      <button id="signOutBtn" class="chip hidden" type="button">Abmelden</button>
+    </div>
+  </header>
+
+  <div class="status"><span id="dot" class="dot"></span><span id="statustext">Verbinde …</span></div>
+
+  <div id="adminPanel" class="admin-card hidden">
+    <h3>Admin-Bereich</h3>
+    <p class="sub">Hier kannst du weitere Konten für den Zugriff freischalten.</p>
+    <div class="admin-row">
+      <div class="field" style="min-width:240px; flex:1">
+        <label for="adminEmail">E-Mail freischalten</label>
+        <input id="adminEmail" type="email" placeholder="mitarbeiter@example.com">
+      </div>
+      <button id="addAllowedBtn" class="btn-primary" type="button">Hinzufügen</button>
+      <button id="removeAllowedBtn" class="chip" type="button">Entfernen</button>
+    </div>
+    <ul id="adminAllowedList" class="admin-list"></ul>
+  </div>
+
+  <div class="addcard">
+    <div class="addgrid">
+      <div class="field wide">
+        <label for="f-name">Getränk</label>
+        <input id="f-name" type="text" placeholder="z. B. Cola">
+      </div>
+      <div class="field">
+        <label for="f-menge">Menge</label>
+        <input id="f-menge" type="number" min="0" value="0">
+      </div>
+      <div class="field">
+        <label for="f-einheit">Einheit</label>
+        <select id="f-einheit">
+          <option>Kisten</option>
+          <option>Flaschen</option>
+          <option>Dosen</option>
+          <option>Fässer</option>
+          <option>Packungen</option>
+          <option>Stück</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="f-preis">Preis pro Einheit (€)</label>
+        <input id="f-preis" type="number" min="0" step="0.01" value="0">
+      </div>
+      <div class="field">
+        <label for="f-notiz">Notiz (optional)</label>
+        <input id="f-notiz" type="text" placeholder="z. B. Lager hinten">
+      </div>
+      <button id="add" class="btn-primary">Hinzufügen</button>
+    </div>
+  </div>
+
+  <div id="summary" class="summary" style="display:none">
+    <span class="lbl">Gesamter Warenwert</span>
+    <span id="total" class="total">0,00 €</span>
+  </div>
+
+  <div id="list" class="list"></div>
+
+  <p style="text-align:center; color:var(--muted); font-size:12px; margin-top:28px">Version 2 · Name erforderlich vor jeder Änderung</p>
+</div>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
+  import {
+    getFirestore, collection, addDoc, onSnapshot,
+    doc, updateDoc, deleteDoc, increment, serverTimestamp, setDoc
+  } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+  import {
+    getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword,
+    signOut, onAuthStateChanged
+  } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
+
+  // --- Deine Firebase-Konfiguration ---
+  const firebaseConfig = {
+    apiKey: "AIzaSyBhQzeKeX9hQp2pSUQ9DUXQ7GsQm61eGJE",
+    authDomain: "getraenkebestand-1e3a6.firebaseapp.com",
+    projectId: "getraenkebestand-1e3a6",
+    storageBucket: "getraenkebestand-1e3a6.firebasestorage.app",
+    messagingSenderId: "491471521697",
+    appId: "1:491471521697:web:222ff2f4d26a235654ede0",
+    measurementId: "G-46JF76MGYQ"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+  const auth = getAuth(app);
+  const colRef = collection(db, "getraenke");
+
+  const authShell = document.getElementById("authShell");
+  const appContent = document.getElementById("appContent");
+  const authEmailInput = document.getElementById("authEmail");
+  const authPasswordInput = document.getElementById("authPassword");
+  const authStatus = document.getElementById("authStatus");
+  const signInBtn = document.getElementById("signInBtn");
+  const signUpBtn = document.getElementById("signUpBtn");
+  const signOutBtn = document.getElementById("signOutBtn");
+  const adminPanel = document.getElementById("adminPanel");
+  const adminEmailInput = document.getElementById("adminEmail");
+  const adminAllowedList = document.getElementById("adminAllowedList");
+  const addAllowedBtn = document.getElementById("addAllowedBtn");
+  const removeAllowedBtn = document.getElementById("removeAllowedBtn");
+
+  const HARDCODED_ADMIN_EMAIL = "osama.bouhrim@gmail.com";
+  const HARDCODED_ADMIN_PASSWORD = "Admin123456!";
+  const settingsDocRef = doc(db, "settings", "access");
+  let allowedEmails = [];
+  let currentUser = null;
+
+  const normalizeEmail = (email) => (email || "").trim().toLowerCase();
+  const isAdminEmail = (email) => normalizeEmail(email) === HARDCODED_ADMIN_EMAIL;
+  const isAllowedEmail = (email) => allowedEmails.includes(normalizeEmail(email));
+  const isAuthorizedUser = (user) => !!user && (isAdminEmail(user.email) || isAllowedEmail(user.email));
+
+  function renderAdminPanel(){
+    if (currentUser && isAdminEmail(currentUser.email)){
+      adminPanel.classList.remove("hidden");
+      adminAllowedList.innerHTML = allowedEmails.length
+        ? allowedEmails.map((email) => `<li>${email}</li>`).join("")
+        : "<li>Keine freigeschalteten Konten</li>";
+    } else {
+      adminPanel.classList.add("hidden");
+    }
+  }
+
+  function setAuthUi(user, message = ""){
+    currentUser = user;
+    if (user && isAuthorizedUser(user)){
+      authShell.classList.add("hidden");
+      appContent.classList.remove("hidden");
+      signOutBtn.classList.remove("hidden");
+      renderAdminPanel();
+      authStatus.textContent = message || `Eingeloggt als ${user.email}`;
+    } else {
+      authShell.classList.remove("hidden");
+      appContent.classList.add("hidden");
+      signOutBtn.classList.add("hidden");
+      adminPanel.classList.add("hidden");
+      authStatus.textContent = message || "Bitte melde dich mit einem freigeschalteten Konto an.";
+      authPasswordInput.value = "";
+    }
+  }
+
+  async function saveAllowedEmails(nextEmails){
+    await setDoc(settingsDocRef, { allowedEmails: nextEmails }, { merge: true });
+  }
+
+  async function handleAuth(action){
+    const email = authEmailInput.value.trim();
+    const password = authPasswordInput.value;
+    if (!email || !password){ authStatus.textContent = "Bitte E-Mail und Passwort eingeben."; return; }
+
+    const isAdminLogin = normalizeEmail(email) === HARDCODED_ADMIN_EMAIL && password === HARDCODED_ADMIN_PASSWORD;
+    try {
+      if (action === "signIn"){
+        if (isAdminLogin){
+          try {
+            await signInWithEmailAndPassword(auth, email, password);
+          } catch (err) {
+            if (err.code === "auth/user-not-found") {
+              await createUserWithEmailAndPassword(auth, email, password);
+            } else {
+              throw err;
+            }
+          }
+        } else {
+          await signInWithEmailAndPassword(auth, email, password);
+        }
+      } else {
+        if (isAdminLogin){
+          try {
+            await createUserWithEmailAndPassword(auth, email, password);
+          } catch (err) {
+            if (err.code !== "auth/email-already-in-use") throw err;
+            await signInWithEmailAndPassword(auth, email, password);
+          }
+        } else {
+          await createUserWithEmailAndPassword(auth, email, password);
+        }
+      }
+    } catch (err){ authStatus.textContent = err.message; }
+  }
+
+  signInBtn.addEventListener("click", () => handleAuth("signIn"));
+  signUpBtn.addEventListener("click", () => handleAuth("signUp"));
+  signOutBtn.addEventListener("click", async () => {
+    try { await signOut(auth); } catch (err) { authStatus.textContent = err.message; }
+  });
+
+  addAllowedBtn.addEventListener("click", async () => {
+    if (!currentUser || !isAdminEmail(currentUser.email)) return;
+    const email = normalizeEmail(adminEmailInput.value);
+    if (!email){ authStatus.textContent = "Bitte eine E-Mail eingeben."; return; }
+    if (allowedEmails.includes(email)) { authStatus.textContent = "Diese E-Mail ist bereits freigeschaltet."; return; }
+    try {
+      await saveAllowedEmails([...allowedEmails, email]);
+      adminEmailInput.value = "";
+      authStatus.textContent = `Freigeschaltet: ${email}`;
+    } catch (err) { authStatus.textContent = err.message; }
+  });
+
+  removeAllowedBtn.addEventListener("click", async () => {
+    if (!currentUser || !isAdminEmail(currentUser.email)) return;
+    const email = normalizeEmail(adminEmailInput.value);
+    if (!email){ authStatus.textContent = "Bitte eine E-Mail zum Entfernen eingeben."; return; }
+    try {
+      const nextEmails = allowedEmails.filter((item) => item !== email);
+      await saveAllowedEmails(nextEmails);
+      adminEmailInput.value = "";
+      authStatus.textContent = `Entfernt: ${email}`;
+    } catch (err) { authStatus.textContent = err.message; }
+  });
+
+  onAuthStateChanged(auth, (user) => {
+    if (!user) {
+      setAuthUi(null, "Bitte melde dich mit einem freigeschalteten Konto an.");
+      return;
+    }
+    if (isAdminEmail(user.email) || isAllowedEmail(user.email)) {
+      setAuthUi(user);
+    } else {
+      setAuthUi(null, "Dieser Account ist nicht freigeschaltet.");
+      signOut(auth).catch(() => {});
+    }
+  });
+
+  onSnapshot(settingsDocRef, (snap) => {
+    const data = snap.data() || {};
+    allowedEmails = Array.isArray(data.allowedEmails) ? data.allowedEmails.map(normalizeEmail).filter(Boolean) : [];
+    renderAdminPanel();
+    if (auth.currentUser && !isAuthorizedUser(auth.currentUser)){
+      setAuthUi(null, "Dieser Account ist nicht freigeschaltet.");
+      signOut(auth).catch(() => {});
+    }
+  }, (err) => {
+    console.error(err);
+    authStatus.textContent = "Die Freigaben konnten nicht geladen werden.";
+  });
+
+  // --- Name merken (nur lokal im Browser) ---
+  const nameInput = document.getElementById("myname");
+  try { nameInput.value = localStorage.getItem("getraenke_name") || ""; } catch(e){}
+  nameInput.addEventListener("input", () => {
+    try { localStorage.setItem("getraenke_name", nameInput.value.trim()); } catch(e){}
+    if (nameInput.value.trim()) nameInput.classList.remove("need");
+  });
+  const wer = () => nameInput.value.trim() || "unbekannt";
+
+  // Verlangt, dass ein Name eingetragen ist, bevor etwas geändert wird
+  function requireName(){
+    if (nameInput.value.trim()){ nameInput.classList.remove("need"); return true; }
+    nameInput.classList.add("need");
+    nameInput.scrollIntoView({ behavior:"smooth", block:"center" });
+    nameInput.focus();
+    alert("Bitte trage zuerst oben deinen Namen ein, damit jede Änderung zugeordnet werden kann.");
+    return false;
+  }
+
+  // --- Zustand ---
+  let items = [];
+  let editingId = null;
+  const listEl = document.getElementById("list");
+  const dot = document.getElementById("dot");
+  const statusText = document.getElementById("statustext");
+
+  // --- Live-Verbindung zur Datenbank ---
+  let unsubscribeItems = null;
+  const attachItemsListener = () => {
+    if (unsubscribeItems) unsubscribeItems();
+    unsubscribeItems = onSnapshot(colRef, (snap) => {
+      items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      dot.className = "dot live";
+      statusText.textContent = "Verbunden – Änderungen erscheinen live";
+      render();
+    }, (err) => {
+      dot.className = "dot err";
+      statusText.textContent = "Keine Verbindung zur Datenbank (Zugriffsregeln prüfen).";
+      console.error(err);
+    });
+  };
+
+  onAuthStateChanged(auth, (user) => {
+    if (!user) {
+      items = [];
+      render();
+      dot.className = "dot err";
+      statusText.textContent = "Bitte melde dich an, um den Bestand zu sehen.";
+      return;
+    }
+    attachItemsListener();
+  });
+
+  const fmtDate = (ts) => {
+    if (!ts || !ts.toDate) return "";
+    return ts.toDate().toLocaleString("de-DE", { day:"2-digit", month:"2-digit", hour:"2-digit", minute:"2-digit" });
+  };
+  const eur = (n) => (Number(n)||0).toLocaleString("de-DE", { style:"currency", currency:"EUR" });
+  const esc = (s) => (s ?? "").toString().replace(/[&<>"]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c]));
+
+  function render(){
+    const total = items.reduce((s,it) => s + (Number(it.preis)||0) * (Number(it.menge)||0), 0);
+    const summaryEl = document.getElementById("summary");
+    if (items.length > 0){
+      summaryEl.style.display = "flex";
+      document.getElementById("total").textContent = eur(total);
+    } else {
+      summaryEl.style.display = "none";
+    }
+
+    if (items.length === 0){
+      listEl.innerHTML = '<div class="empty"><strong>Noch keine Getränke</strong>Trage oben das erste Getränk ein.</div>';
+      return;
+    }
+    // Sortierung: erst was nachbestellt werden muss, dann alphabetisch
+    const sorted = [...items].sort((a,b) => {
+      if (!!a.nachbestellen !== !!b.nachbestellen) return a.nachbestellen ? -1 : 1;
+      return (a.name||"").localeCompare(b.name||"", "de");
+    });
+
+    listEl.innerHTML = sorted.map(it => {
+      if (it.id === editingId){
+        return `<div class="item">
+          <div class="edit">
+            <input data-e="name" type="text" value="${esc(it.name)}" placeholder="Getränk">
+            <input data-e="menge" type="number" min="0" value="${Number(it.menge)||0}">
+            <select data-e="einheit">${["Kisten","Flaschen","Dosen","Fässer","Packungen","Stück"].map(u=>`<option ${u===it.einheit?"selected":""}>${u}</option>`).join("")}</select>
+            <input data-e="preis" type="number" min="0" step="0.01" value="${Number(it.preis)||0}" placeholder="Preis €">
+            <input data-e="notiz" type="text" value="${esc(it.notiz)}" placeholder="Notiz">
+          </div>
+          <div class="edit-actions">
+            <button class="btn-primary" data-action="save" data-id="${it.id}">Speichern</button>
+            <button class="chip" data-action="cancel">Abbrechen</button>
+          </div>
+        </div>`;
+      }
+      return `<div class="item ${it.nachbestellen ? "reorder":""}">
+        <div class="main">
+          <div class="name">${esc(it.name)||"(ohne Name)"} ${it.nachbestellen ? '<span class="badge">nachbestellen</span>':""}</div>
+          ${it.notiz ? `<div class="note">${esc(it.notiz)}</div>`:""}
+          <div class="meta">zuletzt: ${esc(it.updatedBy)||"–"} · ${fmtDate(it.updatedAt)}</div>
+        </div>
+        <div class="qty">
+          <button class="step" data-action="dec" data-id="${it.id}" aria-label="weniger">−</button>
+          <span class="val">${Number(it.menge)||0} <span class="unit">${esc(it.einheit)}</span></span>
+          <button class="step" data-action="inc" data-id="${it.id}" aria-label="mehr">+</button>
+        </div>
+        <div class="wert">
+          <div class="label">Warenwert</div>
+          <div class="amount">${eur((Number(it.preis)||0) * (Number(it.menge)||0))}</div>
+          <div class="single">${eur(it.preis)} / ${esc(it.einheit)||"Einheit"}</div>
+        </div>
+        <div class="actions">
+          <button class="chip ${it.nachbestellen ? "on":""}" data-action="flag" data-id="${it.id}">${it.nachbestellen ? "erledigt":"nachbestellen"}</button>
+          <button class="chip" data-action="edit" data-id="${it.id}">Bearbeiten</button>
+          <button class="chip danger" data-action="del" data-id="${it.id}">Löschen</button>
+        </div>
+      </div>`;
+    }).join("");
+  }
+
+  // --- Neues Getränk hinzufügen ---
+  document.getElementById("add").addEventListener("click", async () => {
+    if (!requireName()) return;
+    if (!auth.currentUser) { alert("Bitte melde dich zuerst an."); return; }
+    const name = document.getElementById("f-name").value.trim();
+    if (!name){ document.getElementById("f-name").focus(); return; }
+    const menge = Number(document.getElementById("f-menge").value) || 0;
+    const einheit = document.getElementById("f-einheit").value;
+    const preis = Number(document.getElementById("f-preis").value) || 0;
+    const notiz = document.getElementById("f-notiz").value.trim();
+    try {
+      await addDoc(colRef, {
+        name, menge, einheit, preis, notiz,
+        nachbestellen: false,
+        updatedBy: wer(), updatedAt: serverTimestamp()
+      });
+      document.getElementById("f-name").value = "";
+      document.getElementById("f-menge").value = "0";
+      document.getElementById("f-preis").value = "0";
+      document.getElementById("f-notiz").value = "";
+      document.getElementById("f-name").focus();
+    } catch(e){ alert("Speichern fehlgeschlagen: " + e.message); }
+  });
+  document.getElementById("f-name").addEventListener("keydown", e => { if (e.key === "Enter") document.getElementById("add").click(); });
+
+  // --- Klicks in der Liste (Mengen, Markieren, Bearbeiten, Löschen) ---
+  listEl.addEventListener("click", async (e) => {
+    const btn = e.target.closest("button[data-action]");
+    if (!btn) return;
+    const action = btn.dataset.action;
+    const id = btn.dataset.id;
+
+    // Bei schreibenden Aktionen zuerst den Namen verlangen
+    if (["inc","dec","flag","save","del"].includes(action) && !requireName()) return;
+    if (["inc","dec","flag","save","del"].includes(action) && !auth.currentUser) { alert("Bitte melde dich zuerst an."); return; }
+
+    try {
+      if (action === "inc" || action === "dec"){
+        const cur = items.find(x => x.id === id);
+        const next = (Number(cur?.menge)||0) + (action === "inc" ? 1 : -1);
+        if (next < 0) return;
+        await updateDoc(doc(db,"getraenke",id), { menge: increment(action === "inc" ? 1 : -1), updatedBy: wer(), updatedAt: serverTimestamp() });
+      }
+      else if (action === "flag"){
+        const cur = items.find(x => x.id === id);
+        await updateDoc(doc(db,"getraenke",id), { nachbestellen: !cur?.nachbestellen, updatedBy: wer(), updatedAt: serverTimestamp() });
+      }
+      else if (action === "edit"){ editingId = id; render(); }
+      else if (action === "cancel"){ editingId = null; render(); }
+      else if (action === "save"){
+        const row = btn.closest(".item");
+        const val = sel => row.querySelector(`[data-e="${sel}"]`).value;
+        await updateDoc(doc(db,"getraenke",id), {
+          name: val("name").trim(),
+          menge: Number(val("menge"))||0,
+          einheit: val("einheit"),
+          preis: Number(val("preis"))||0,
+          notiz: val("notiz").trim(),
+          updatedBy: wer(), updatedAt: serverTimestamp()
+        });
+        editingId = null;
+      }
+      else if (action === "del"){
+        const cur = items.find(x => x.id === id);
+        if (confirm(`„${cur?.name}" wirklich löschen?`)) await deleteDoc(doc(db,"getraenke",id));
+      }
+    } catch(err){ alert("Aktion fehlgeschlagen: " + err.message); }
+  });
+</script>
+</body>
+</html>
