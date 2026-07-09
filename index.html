@@ -78,6 +78,17 @@
   .empty{text-align:center; color:var(--muted); padding:48px 16px; border:1px dashed var(--line); border-radius:var(--radius)}
   .empty strong{display:block; color:var(--ink); font-weight:600; margin-bottom:4px}
 
+  .hidden{display:none !important}
+  .auth-shell{max-width:420px; margin:32px auto 0; background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:24px; box-shadow:0 10px 30px rgba(0,0,0,.04)}
+  .auth-shell h2{margin:0 0 8px; font-size:24px}
+  .auth-shell p{margin:0 0 14px; color:var(--muted)}
+  .auth-actions{display:flex; gap:8px; flex-wrap:wrap; margin-top:12px}
+  .auth-status{font-size:13px; color:var(--muted); margin-top:12px}
+  .admin-card{margin:18px 0 6px; background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:14px}
+  .admin-card h3{margin:0 0 6px; font-size:16px}
+  .admin-list{padding-left:18px; margin:8px 0 0; color:var(--muted)}
+  .admin-row{display:flex; gap:8px; flex-wrap:wrap; align-items:end; margin-top:8px}
+
   @media(max-width:720px){
     .addgrid{grid-template-columns:1fr 1fr}
     .addgrid .field.wide,.addgrid .btn-primary{grid-column:1 / -1}
@@ -87,7 +98,25 @@
 </style>
 </head>
 <body>
-<div class="wrap">
+<div id="authShell" class="auth-shell">
+  <h2>Zugang geschützt</h2>
+  <p>Bitte melde dich mit einem freigeschalteten Konto an, um den Getränkebestand zu sehen.</p>
+  <div class="field">
+    <label for="authEmail">E-Mail</label>
+    <input id="authEmail" type="email" placeholder="du@example.com">
+  </div>
+  <div class="field">
+    <label for="authPassword">Passwort</label>
+    <input id="authPassword" type="password" placeholder="Mindestens 6 Zeichen">
+  </div>
+  <div class="auth-actions">
+    <button id="signInBtn" class="btn-primary" type="button">Anmelden</button>
+    <button id="signUpBtn" class="chip" type="button">Konto anlegen</button>
+  </div>
+  <div id="authStatus" class="auth-status">Bitte logge dich ein.</div>
+</div>
+
+<div id="appContent" class="wrap hidden">
   <header>
     <div>
       <h1>Getränkebestand</h1>
@@ -96,10 +125,25 @@
     <div class="me">
       <label for="myname">Dein Name (für „zuletzt geändert")</label>
       <input id="myname" type="text" placeholder="z. B. Oussama">
+      <button id="signOutBtn" class="chip hidden" type="button">Abmelden</button>
     </div>
   </header>
 
   <div class="status"><span id="dot" class="dot"></span><span id="statustext">Verbinde …</span></div>
+
+  <div id="adminPanel" class="admin-card hidden">
+    <h3>Admin-Bereich</h3>
+    <p class="sub">Hier kannst du weitere Konten für den Zugriff freischalten.</p>
+    <div class="admin-row">
+      <div class="field" style="min-width:240px; flex:1">
+        <label for="adminEmail">E-Mail freischalten</label>
+        <input id="adminEmail" type="email" placeholder="mitarbeiter@example.com">
+      </div>
+      <button id="addAllowedBtn" class="btn-primary" type="button">Hinzufügen</button>
+      <button id="removeAllowedBtn" class="chip" type="button">Entfernen</button>
+    </div>
+    <ul id="adminAllowedList" class="admin-list"></ul>
+  </div>
 
   <div class="addcard">
     <div class="addgrid">
@@ -148,8 +192,12 @@
   import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
   import {
     getFirestore, collection, addDoc, onSnapshot,
-    doc, updateDoc, deleteDoc, increment, serverTimestamp
+    doc, updateDoc, deleteDoc, increment, serverTimestamp, setDoc
   } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+  import {
+    getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword,
+    signOut, onAuthStateChanged
+  } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
 
   // --- Deine Firebase-Konfiguration ---
   const firebaseConfig = {
@@ -164,7 +212,158 @@
 
   const app = initializeApp(firebaseConfig);
   const db = getFirestore(app);
+  const auth = getAuth(app);
   const colRef = collection(db, "getraenke");
+
+  const authShell = document.getElementById("authShell");
+  const appContent = document.getElementById("appContent");
+  const authEmailInput = document.getElementById("authEmail");
+  const authPasswordInput = document.getElementById("authPassword");
+  const authStatus = document.getElementById("authStatus");
+  const signInBtn = document.getElementById("signInBtn");
+  const signUpBtn = document.getElementById("signUpBtn");
+  const signOutBtn = document.getElementById("signOutBtn");
+  const adminPanel = document.getElementById("adminPanel");
+  const adminEmailInput = document.getElementById("adminEmail");
+  const adminAllowedList = document.getElementById("adminAllowedList");
+  const addAllowedBtn = document.getElementById("addAllowedBtn");
+  const removeAllowedBtn = document.getElementById("removeAllowedBtn");
+
+  const HARDCODED_ADMIN_EMAIL = "osama.bouhrim@gmail.com";
+  const HARDCODED_ADMIN_PASSWORD = "Admin123456!";
+  const settingsDocRef = doc(db, "settings", "access");
+  let allowedEmails = [];
+  let currentUser = null;
+
+  const normalizeEmail = (email) => (email || "").trim().toLowerCase();
+  const isAdminEmail = (email) => normalizeEmail(email) === HARDCODED_ADMIN_EMAIL;
+  const isAllowedEmail = (email) => allowedEmails.includes(normalizeEmail(email));
+  const isAuthorizedUser = (user) => !!user && (isAdminEmail(user.email) || isAllowedEmail(user.email));
+
+  function renderAdminPanel(){
+    if (currentUser && isAdminEmail(currentUser.email)){
+      adminPanel.classList.remove("hidden");
+      adminAllowedList.innerHTML = allowedEmails.length
+        ? allowedEmails.map((email) => `<li>${email}</li>`).join("")
+        : "<li>Keine freigeschalteten Konten</li>";
+    } else {
+      adminPanel.classList.add("hidden");
+    }
+  }
+
+  function setAuthUi(user, message = ""){
+    currentUser = user;
+    if (user && isAuthorizedUser(user)){
+      authShell.classList.add("hidden");
+      appContent.classList.remove("hidden");
+      signOutBtn.classList.remove("hidden");
+      renderAdminPanel();
+      authStatus.textContent = message || `Eingeloggt als ${user.email}`;
+    } else {
+      authShell.classList.remove("hidden");
+      appContent.classList.add("hidden");
+      signOutBtn.classList.add("hidden");
+      adminPanel.classList.add("hidden");
+      authStatus.textContent = message || "Bitte melde dich mit einem freigeschalteten Konto an.";
+      authPasswordInput.value = "";
+    }
+  }
+
+  async function saveAllowedEmails(nextEmails){
+    await setDoc(settingsDocRef, { allowedEmails: nextEmails }, { merge: true });
+  }
+
+  async function handleAuth(action){
+    const email = authEmailInput.value.trim();
+    const password = authPasswordInput.value;
+    if (!email || !password){ authStatus.textContent = "Bitte E-Mail und Passwort eingeben."; return; }
+
+    const isAdminLogin = normalizeEmail(email) === HARDCODED_ADMIN_EMAIL && password === HARDCODED_ADMIN_PASSWORD;
+    try {
+      if (action === "signIn"){
+        if (isAdminLogin){
+          try {
+            await signInWithEmailAndPassword(auth, email, password);
+          } catch (err) {
+            if (err.code === "auth/user-not-found") {
+              await createUserWithEmailAndPassword(auth, email, password);
+            } else {
+              throw err;
+            }
+          }
+        } else {
+          await signInWithEmailAndPassword(auth, email, password);
+        }
+      } else {
+        if (isAdminLogin){
+          try {
+            await createUserWithEmailAndPassword(auth, email, password);
+          } catch (err) {
+            if (err.code !== "auth/email-already-in-use") throw err;
+            await signInWithEmailAndPassword(auth, email, password);
+          }
+        } else {
+          await createUserWithEmailAndPassword(auth, email, password);
+        }
+      }
+    } catch (err){ authStatus.textContent = err.message; }
+  }
+
+  signInBtn.addEventListener("click", () => handleAuth("signIn"));
+  signUpBtn.addEventListener("click", () => handleAuth("signUp"));
+  signOutBtn.addEventListener("click", async () => {
+    try { await signOut(auth); } catch (err) { authStatus.textContent = err.message; }
+  });
+
+  addAllowedBtn.addEventListener("click", async () => {
+    if (!currentUser || !isAdminEmail(currentUser.email)) return;
+    const email = normalizeEmail(adminEmailInput.value);
+    if (!email){ authStatus.textContent = "Bitte eine E-Mail eingeben."; return; }
+    if (allowedEmails.includes(email)) { authStatus.textContent = "Diese E-Mail ist bereits freigeschaltet."; return; }
+    try {
+      await saveAllowedEmails([...allowedEmails, email]);
+      adminEmailInput.value = "";
+      authStatus.textContent = `Freigeschaltet: ${email}`;
+    } catch (err) { authStatus.textContent = err.message; }
+  });
+
+  removeAllowedBtn.addEventListener("click", async () => {
+    if (!currentUser || !isAdminEmail(currentUser.email)) return;
+    const email = normalizeEmail(adminEmailInput.value);
+    if (!email){ authStatus.textContent = "Bitte eine E-Mail zum Entfernen eingeben."; return; }
+    try {
+      const nextEmails = allowedEmails.filter((item) => item !== email);
+      await saveAllowedEmails(nextEmails);
+      adminEmailInput.value = "";
+      authStatus.textContent = `Entfernt: ${email}`;
+    } catch (err) { authStatus.textContent = err.message; }
+  });
+
+  onAuthStateChanged(auth, (user) => {
+    if (!user) {
+      setAuthUi(null, "Bitte melde dich mit einem freigeschalteten Konto an.");
+      return;
+    }
+    if (isAdminEmail(user.email) || isAllowedEmail(user.email)) {
+      setAuthUi(user);
+    } else {
+      setAuthUi(null, "Dieser Account ist nicht freigeschaltet.");
+      signOut(auth).catch(() => {});
+    }
+  });
+
+  onSnapshot(settingsDocRef, (snap) => {
+    const data = snap.data() || {};
+    allowedEmails = Array.isArray(data.allowedEmails) ? data.allowedEmails.map(normalizeEmail).filter(Boolean) : [];
+    renderAdminPanel();
+    if (auth.currentUser && !isAuthorizedUser(auth.currentUser)){
+      setAuthUi(null, "Dieser Account ist nicht freigeschaltet.");
+      signOut(auth).catch(() => {});
+    }
+  }, (err) => {
+    console.error(err);
+    authStatus.textContent = "Die Freigaben konnten nicht geladen werden.";
+  });
 
   // --- Name merken (nur lokal im Browser) ---
   const nameInput = document.getElementById("myname");
@@ -193,15 +392,30 @@
   const statusText = document.getElementById("statustext");
 
   // --- Live-Verbindung zur Datenbank ---
-  onSnapshot(colRef, (snap) => {
-    items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    dot.className = "dot live";
-    statusText.textContent = "Verbunden – Änderungen erscheinen live";
-    render();
-  }, (err) => {
-    dot.className = "dot err";
-    statusText.textContent = "Keine Verbindung zur Datenbank (Zugriffsregeln prüfen).";
-    console.error(err);
+  let unsubscribeItems = null;
+  const attachItemsListener = () => {
+    if (unsubscribeItems) unsubscribeItems();
+    unsubscribeItems = onSnapshot(colRef, (snap) => {
+      items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      dot.className = "dot live";
+      statusText.textContent = "Verbunden – Änderungen erscheinen live";
+      render();
+    }, (err) => {
+      dot.className = "dot err";
+      statusText.textContent = "Keine Verbindung zur Datenbank (Zugriffsregeln prüfen).";
+      console.error(err);
+    });
+  };
+
+  onAuthStateChanged(auth, (user) => {
+    if (!user) {
+      items = [];
+      render();
+      dot.className = "dot err";
+      statusText.textContent = "Bitte melde dich an, um den Bestand zu sehen.";
+      return;
+    }
+    attachItemsListener();
   });
 
   const fmtDate = (ts) => {
@@ -275,6 +489,7 @@
   // --- Neues Getränk hinzufügen ---
   document.getElementById("add").addEventListener("click", async () => {
     if (!requireName()) return;
+    if (!auth.currentUser) { alert("Bitte melde dich zuerst an."); return; }
     const name = document.getElementById("f-name").value.trim();
     if (!name){ document.getElementById("f-name").focus(); return; }
     const menge = Number(document.getElementById("f-menge").value) || 0;
@@ -305,6 +520,7 @@
 
     // Bei schreibenden Aktionen zuerst den Namen verlangen
     if (["inc","dec","flag","save","del"].includes(action) && !requireName()) return;
+    if (["inc","dec","flag","save","del"].includes(action) && !auth.currentUser) { alert("Bitte melde dich zuerst an."); return; }
 
     try {
       if (action === "inc" || action === "dec"){
