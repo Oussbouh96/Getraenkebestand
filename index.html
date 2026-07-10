@@ -412,13 +412,22 @@
   const isAuthorizedUser = (user) => !!user && (isAdminEmail(user.email) || isAllowedEmail(user.email));
 
   function renderAdminPanel(){
-    if (currentUser && isAdminEmail(currentUser.email)){
+    const admin = !!(currentUser && isAdminEmail(currentUser.email));
+    if (admin){
       adminPanel.classList.remove("hidden");
       adminAllowedList.innerHTML = allowedEmails.length
         ? allowedEmails.map((email) => `<li>${email}</li>`).join("")
         : "<li>Keine freigeschalteten Konten</li>";
     } else {
       adminPanel.classList.add("hidden");
+    }
+    // Verbrauch pro Person ist privat: nur der Admin sieht Button und Panel
+    const statsToggleEl = document.getElementById("statsToggle");
+    const statsPanelEl = document.getElementById("statsPanel");
+    if (statsToggleEl) statsToggleEl.classList.toggle("hidden", !admin);
+    if (!admin && statsPanelEl){
+      statsPanelEl.classList.add("hidden");
+      if (statsToggleEl) statsToggleEl.classList.remove("on");
     }
   }
 
